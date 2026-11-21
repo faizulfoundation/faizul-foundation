@@ -1,0 +1,406 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED PRIMITIVES ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSha256Hex(id) {
+      return id is string && id.size() == 64 && id.matches('^[a-f0-9]{64}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Bootstrapped Foundation Administrators (verified email claim required to prevent email spoofing)
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email_verified == true &&
+             (
+               request.auth.token.email == 'faizul8057@gmail.com' ||
+               request.auth.token.email == 'faizulfoundation@gmail.com'
+             );
+    }
+
+    // Used only on single-document operations (get/create/update/delete), never inside allow list
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+             (isSignedIn() &&
+              request.auth.token.email_verified == true &&
+              exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // --- COLLECTION VALIDATION HELPERS ---
+    function isValidHelpCategory(cat) {
+      return cat in [
+        'Financial Assistance',
+        'Education Support',
+        'Madrasa Support',
+        'Masjid Support',
+        'Food and Basic Needs',
+        'Other Assistance'
+      ];
+    }
+
+    function isValidRequestStatus(status) {
+      return status in [
+        'Pending Review',
+        'Under Review',
+        'Verified',
+        'Assisted',
+        'Closed'
+      ];
+    }
+
+    function isValidProjectStage(stage) {
+      return stage in [
+        'Completed',
+        'Work in Progress',
+        'Proposed'
+      ];
+    }
+
+    function isValidHelpRequest(data) {
+      return data.keys().hasAll([
+               'referenceCode', 'fullName', 'mobileNumber', 'location',
+               'category', 'description', 'consentAccepted', 'status',
+               'adminNotes', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'referenceCode', 'fullName', 'mobileNumber', 'location',
+               'category', 'description', 'attachmentName', 'attachmentMimeType',
+               'attachmentDataUrl', 'consentAccepted', 'status', 'adminNotes',
+               'statusLookupId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.referenceCode is string && data.referenceCode.size() >= 2 && data.referenceCode.size() <= 32 &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120 &&
+             data.mobileNumber is string && data.mobileNumber.size() >= 10 && data.mobileNumber.size() <= 20 &&
+             data.location is string && data.location.size() >= 3 && data.location.size() <= 200 &&
+             data.category is string && isValidHelpCategory(data.category) &&
+             data.description is string && data.description.size() >= 20 && data.description.size() <= 3000 &&
+             (!('attachmentName' in data) || data.attachmentName == null || (data.attachmentName is string && data.attachmentName.size() <= 150)) &&
+             (!('attachmentMimeType' in data) || data.attachmentMimeType == null || (data.attachmentMimeType is string && data.attachmentMimeType.size() <= 100)) &&
+             (!('attachmentDataUrl' in data) || data.attachmentDataUrl == null || (data.attachmentDataUrl is string && data.attachmentDataUrl.size() <= 350000)) &&
+             (!('statusLookupId' in data) || data.statusLookupId == null || isValidSha256Hex(data.statusLookupId)) &&
+             data.consentAccepted is bool && data.consentAccepted == true &&
+             data.status is string && isValidRequestStatus(data.status) &&
+             data.adminNotes is string && data.adminNotes.size() <= 2000;
+    }
+
+    function isValidStatusLookup(data) {
+      return data.keys().hasAll(['requestRef', 'category', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['requestRef', 'category', 'status', 'createdAt', 'updatedAt']) &&
+             data.requestRef is string && data.requestRef.size() >= 2 && data.requestRef.size() <= 32 &&
+             data.category is string && isValidHelpCategory(data.category) &&
+             data.status is string && isValidRequestStatus(data.status);
+    }
+
+    function isValidActivity(data) {
+      return data.keys().hasAll([
+               'title', 'description', 'activityDate', 'location',
+               'photoUrls', 'isPublished', 'projectStage', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'title', 'description', 'activityDate', 'location',
+               'photoUrls', 'isPublished', 'projectStage', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() >= 5 && data.description.size() <= 4000 &&
+             data.activityDate is string && data.activityDate.size() >= 2 && data.activityDate.size() <= 80 &&
+             data.location is string && data.location.size() >= 2 && data.location.size() <= 200 &&
+             data.photoUrls is list && data.photoUrls.size() <= 5 &&
+             (data.photoUrls.size() == 0 || (data.photoUrls[0] is string && data.photoUrls[0].size() <= 220000)) &&
+             data.isPublished is bool &&
+             data.projectStage is string && isValidProjectStage(data.projectStage);
+    }
+
+    function isOptionalCount(data, field) {
+      return !(field in data) || data[field] == null || (data[field] is int && data[field] >= 0 && data[field] <= 100000000);
+    }
+
+    function isValidImpactMetrics(data) {
+      return data.keys().hasAll(['updatedAt']) &&
+             data.keys().hasOnly([
+               'peopleHelped', 'studentsSupported', 'familiesSupported',
+               'madrasasSupported', 'masjidsSupported', 'updatedAt'
+             ]) &&
+             isOptionalCount(data, 'peopleHelped') &&
+             isOptionalCount(data, 'studentsSupported') &&
+             isOptionalCount(data, 'familiesSupported') &&
+             isOptionalCount(data, 'madrasasSupported') &&
+             isOptionalCount(data, 'masjidsSupported');
+    }
+
+    function isValidContactConfig(data) {
+      return data.keys().hasAll([
+               'contactPerson', 'mobileNumber', 'emailAddress',
+               'address', 'whatsappNumber', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'contactPerson', 'mobileNumber', 'emailAddress',
+               'address', 'whatsappNumber', 'updatedAt'
+             ]) &&
+             data.contactPerson is string && data.contactPerson.size() >= 1 && data.contactPerson.size() <= 150 &&
+             data.mobileNumber is string && data.mobileNumber.size() >= 1 && data.mobileNumber.size() <= 40 &&
+             data.emailAddress is string && data.emailAddress.size() >= 1 && data.emailAddress.size() <= 150 &&
+             data.address is string && data.address.size() >= 1 && data.address.size() <= 500 &&
+             data.whatsappNumber is string && data.whatsappNumber.size() <= 40;
+    }
+
+    function isValidSiteContent(data) {
+      return data.keys().hasAll([
+               'missionStatement', 'homeIntroduction', 'aboutWhoWeAre',
+               'aboutWhyCreated', 'aboutVision', 'aboutCommitment',
+               'supportUsMessage', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'missionStatement', 'homeIntroduction', 'aboutWhoWeAre',
+               'aboutWhyCreated', 'aboutVision', 'aboutCommitment',
+               'supportUsMessage', 'updatedAt'
+             ]) &&
+             data.missionStatement is string && data.missionStatement.size() >= 5 && data.missionStatement.size() <= 1000 &&
+             data.homeIntroduction is string && data.homeIntroduction.size() >= 5 && data.homeIntroduction.size() <= 2000 &&
+             data.aboutWhoWeAre is string && data.aboutWhoWeAre.size() >= 5 && data.aboutWhoWeAre.size() <= 3000 &&
+             data.aboutWhyCreated is string && data.aboutWhyCreated.size() >= 5 && data.aboutWhyCreated.size() <= 3000 &&
+             data.aboutVision is string && data.aboutVision.size() >= 5 && data.aboutVision.size() <= 3000 &&
+             data.aboutCommitment is string && data.aboutCommitment.size() >= 5 && data.aboutCommitment.size() <= 3000 &&
+             data.supportUsMessage is string && data.supportUsMessage.size() >= 5 && data.supportUsMessage.size() <= 1000;
+    }
+
+    function isValidLegalPolicy(data) {
+      return data.keys().hasAll(['title', 'content', 'sortOrder', 'updatedAt']) &&
+             data.keys().hasOnly(['title', 'content', 'sortOrder', 'updatedAt']) &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 150 &&
+             data.content is string && data.content.size() >= 10 && data.content.size() <= 15000 &&
+             data.sortOrder is int && data.sortOrder >= 1 && data.sortOrder <= 50;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['email', 'grantedAt']) &&
+             data.keys().hasOnly(['email', 'grantedAt']) &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 150;
+    }
+
+    // --- 1. HELP REQUESTS (Strictly Private PII; Public Write-Only Intake) ---
+    match /help_requests/{requestId} {
+      allow get: if isValidId(requestId) && isAdmin();
+      // List uses pure token check (no get()/exists()) per cost-optimization rule.
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isValidId(requestId) &&
+                       isValidHelpRequest(incoming()) &&
+                       incoming().referenceCode == requestId &&
+                       incoming().createdAt == request.time &&
+                       incoming().updatedAt == request.time &&
+                       (
+                         isAdmin() ||
+                         (incoming().status == 'Pending Review' && incoming().adminNotes == '')
+                       );
+
+      allow update: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidHelpRequest(incoming()) &&
+                       isAdmin() &&
+                       incoming().referenceCode == existing().referenceCode &&
+                       incoming().fullName == existing().fullName &&
+                       incoming().mobileNumber == existing().mobileNumber &&
+                       incoming().location == existing().location &&
+                       incoming().category == existing().category &&
+                       incoming().description == existing().description &&
+                       incoming().consentAccepted == existing().consentAccepted &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'updatedAt']);
+
+      allow delete: if isValidId(requestId) && isAdmin();
+    }
+
+    // --- 2. REQUEST STATUS LOOKUPS (Zero-PII Cryptographic Hash Lookup) ---
+    match /request_status_lookups/{lookupId} {
+      allow get: if isValidId(lookupId) && isValidSha256Hex(lookupId);
+      allow list: if false;
+
+      allow create: if isValidId(lookupId) &&
+                       isValidSha256Hex(lookupId) &&
+                       isValidStatusLookup(incoming()) &&
+                       incoming().createdAt == request.time &&
+                       incoming().updatedAt == request.time &&
+                       getAfter(/databases/$(database)/documents/help_requests/$(incoming().requestRef)).data.statusLookupId == lookupId &&
+                       (isAdmin() || incoming().status == 'Pending Review');
+
+      allow update: if isSignedIn() &&
+                       isValidId(lookupId) &&
+                       isValidSha256Hex(lookupId) &&
+                       isValidStatusLookup(incoming()) &&
+                       isAdmin() &&
+                       incoming().requestRef == existing().requestRef &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isValidId(lookupId) && isAdmin();
+    }
+
+    // --- 3. FOUNDATION ACTIVITIES (Public Published Read, Admin Full CRUD) ---
+    match /activities/{activityId} {
+      allow get: if isValidId(activityId) && (existing().isPublished == true || isAdmin());
+      allow list: if resource.data.isPublished == true || isBootstrappedAdmin();
+
+      allow create: if isSignedIn() &&
+                       isValidId(activityId) &&
+                       isValidActivity(incoming()) &&
+                       isAdmin() &&
+                       incoming().createdAt == request.time &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(activityId) &&
+                       isValidActivity(incoming()) &&
+                       isAdmin() &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'title', 'description', 'activityDate', 'location',
+                         'photoUrls', 'isPublished', 'projectStage', 'updatedAt'
+                       ]);
+
+      allow delete: if isValidId(activityId) && isAdmin();
+    }
+
+    // --- 4. IMPACT METRICS (Public Singleton Read on 'current', Admin Write) ---
+    match /impact_metrics/{metricsId} {
+      allow get: if isValidId(metricsId) && metricsId == 'current';
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(metricsId) &&
+                       metricsId == 'current' &&
+                       isValidImpactMetrics(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(metricsId) &&
+                       metricsId == 'current' &&
+                       isValidImpactMetrics(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'peopleHelped', 'studentsSupported', 'familiesSupported',
+                         'madrasasSupported', 'masjidsSupported', 'updatedAt'
+                       ]);
+
+      allow delete: if false;
+    }
+
+    // --- 5. CONTACT CONFIG (Public Singleton Read on 'current', Admin Write) ---
+    match /contact_config/{configId} {
+      allow get: if isValidId(configId) && configId == 'current';
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(configId) &&
+                       configId == 'current' &&
+                       isValidContactConfig(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(configId) &&
+                       configId == 'current' &&
+                       isValidContactConfig(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'contactPerson', 'mobileNumber', 'emailAddress',
+                         'address', 'whatsappNumber', 'updatedAt'
+                       ]);
+
+      allow delete: if false;
+    }
+
+    // --- 6. SITE CONTENT (Public Singleton Read on 'current', Admin Write) ---
+    match /site_content/{contentId} {
+      allow get: if isValidId(contentId) && contentId == 'current';
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(contentId) &&
+                       contentId == 'current' &&
+                       isValidSiteContent(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(contentId) &&
+                       contentId == 'current' &&
+                       isValidSiteContent(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'missionStatement', 'homeIntroduction', 'aboutWhoWeAre',
+                         'aboutWhyCreated', 'aboutVision', 'aboutCommitment',
+                         'supportUsMessage', 'updatedAt'
+                       ]);
+
+      allow delete: if false;
+    }
+
+    // --- 7. LEGAL POLICIES (Public Read, Admin Write) ---
+    match /legal_policies/{policyKey} {
+      allow get: if isValidId(policyKey);
+      allow list: if resource.data.sortOrder >= 1;
+
+      allow create: if isSignedIn() &&
+                       isValidId(policyKey) &&
+                       isValidLegalPolicy(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(policyKey) &&
+                       isValidLegalPolicy(incoming()) &&
+                       isAdmin() &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'title', 'content', 'sortOrder', 'updatedAt'
+                       ]);
+
+      allow delete: if false;
+    }
+
+    // --- 8. ADMIN REGISTRY (Anti-Privilege-Escalation) ---
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && isSignedIn() && request.auth.uid == adminUid;
+      allow list: if isBootstrappedAdmin();
+      allow create: if isSignedIn() &&
+                       isValidId(adminUid) &&
+                       isValidAdminRecord(incoming()) &&
+                       isBootstrappedAdmin() &&
+                       incoming().grantedAt == request.time;
+      allow update: if isSignedIn() &&
+                       isValidId(adminUid) &&
+                       isValidAdminRecord(incoming()) &&
+                       isBootstrappedAdmin() &&
+                       incoming().grantedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'grantedAt']);
+      allow delete: if isValidId(adminUid) && isBootstrappedAdmin();
+    }
+  }
+}

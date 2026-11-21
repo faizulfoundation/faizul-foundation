@@ -1,0 +1,6 @@
+{
+  "name": "Faizul Foundation",
+  "description": "Official website for Faizul Foundation — Serving Humanity, Supporting Education, and Strengthening Madrasas & Masjids through verified community activities and confidential help requests.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

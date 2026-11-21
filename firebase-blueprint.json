@@ -1,0 +1,402 @@
+{
+  "entities": {
+    "HelpRequest": {
+      "title": "HelpRequest",
+      "description": "Confidential assistance request submitted by a visitor without registration.",
+      "type": "object",
+      "properties": {
+        "referenceCode": {
+          "type": "string",
+          "description": "Unique human-readable reference code beginning with FF- matching the document ID."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Applicant full name."
+        },
+        "mobileNumber": {
+          "type": "string",
+          "description": "Applicant mobile number."
+        },
+        "location": {
+          "type": "string",
+          "description": "Applicant village, city, and district."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Financial Assistance",
+            "Education Support",
+            "Madrasa Support",
+            "Masjid Support",
+            "Food and Basic Needs",
+            "Other Assistance"
+          ],
+          "description": "Type of help requested."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the applicant's situation."
+        },
+        "attachmentName": {
+          "type": "string",
+          "description": "Optional attachment display filename."
+        },
+        "attachmentMimeType": {
+          "type": "string",
+          "description": "Optional attachment MIME type."
+        },
+        "attachmentDataUrl": {
+          "type": "string",
+          "description": "Optional compact compressed base64 data URL within Firestore size limits."
+        },
+        "consentAccepted": {
+          "type": "boolean",
+          "description": "Applicant Privacy Policy consent confirmation."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Pending Review",
+            "Under Review",
+            "Verified",
+            "Assisted",
+            "Closed"
+          ],
+          "description": "Review status managed exclusively by administrators."
+        },
+        "adminNotes": {
+          "type": "string",
+          "description": "Private review notes recorded by administrators."
+        },
+        "statusLookupId": {
+          "type": "string",
+          "description": "Optional 64-character SHA-256 hex digest linking to non-PII status tracking document."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp written via serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp updated via serverTimestamp()."
+        }
+      },
+      "required": [
+        "referenceCode",
+        "fullName",
+        "mobileNumber",
+        "location",
+        "category",
+        "description",
+        "consentAccepted",
+        "status",
+        "adminNotes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RequestStatusLookup": {
+      "title": "RequestStatusLookup",
+      "description": "Non-PII request status lookup record keyed by cryptographic SHA-256 digest of referenceCode and verification PIN.",
+      "type": "object",
+      "properties": {
+        "requestRef": {
+          "type": "string",
+          "description": "Human-readable FF- reference code."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Financial Assistance",
+            "Education Support",
+            "Madrasa Support",
+            "Masjid Support",
+            "Food and Basic Needs",
+            "Other Assistance"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Pending Review",
+            "Under Review",
+            "Verified",
+            "Assisted",
+            "Closed"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "requestRef",
+        "category",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FoundationActivity": {
+      "title": "FoundationActivity",
+      "description": "Humanitarian or community activity or proposed project record managed by administrator.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "activityDate": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "photoUrls": {
+          "type": "array",
+          "description": "Up to 5 compact compressed image data URLs or verified asset paths."
+        },
+        "isPublished": {
+          "type": "boolean",
+          "description": "Controls public visibility of the activity."
+        },
+        "projectStage": {
+          "type": "string",
+          "enum": [
+            "Completed",
+            "Work in Progress",
+            "Proposed"
+          ],
+          "description": "Truthful stage classification so proposed concepts are never presented as completed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "activityDate",
+        "location",
+        "photoUrls",
+        "isPublished",
+        "projectStage",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ImpactMetrics": {
+      "title": "ImpactMetrics",
+      "description": "Verified impact figures published by the foundation administrator (null triggers 'Data Coming Soon').",
+      "type": "object",
+      "properties": {
+        "peopleHelped": {
+          "type": "integer"
+        },
+        "studentsSupported": {
+          "type": "integer"
+        },
+        "familiesSupported": {
+          "type": "integer"
+        },
+        "madrasasSupported": {
+          "type": "integer"
+        },
+        "masjidsSupported": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "updatedAt"
+      ]
+    },
+    "ContactConfig": {
+      "title": "ContactConfig",
+      "description": "Public helpline, WhatsApp, email, and office contact configuration.",
+      "type": "object",
+      "properties": {
+        "contactPerson": {
+          "type": "string"
+        },
+        "mobileNumber": {
+          "type": "string"
+        },
+        "emailAddress": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "whatsappNumber": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "contactPerson",
+        "mobileNumber",
+        "emailAddress",
+        "address",
+        "whatsappNumber",
+        "updatedAt"
+      ]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Foundation mission, introduction, About Us, and Support Us public copy.",
+      "type": "object",
+      "properties": {
+        "missionStatement": {
+          "type": "string"
+        },
+        "homeIntroduction": {
+          "type": "string"
+        },
+        "aboutWhoWeAre": {
+          "type": "string"
+        },
+        "aboutWhyCreated": {
+          "type": "string"
+        },
+        "aboutVision": {
+          "type": "string"
+        },
+        "aboutCommitment": {
+          "type": "string"
+        },
+        "supportUsMessage": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "missionStatement",
+        "homeIntroduction",
+        "aboutWhoWeAre",
+        "aboutWhyCreated",
+        "aboutVision",
+        "aboutCommitment",
+        "supportUsMessage",
+        "updatedAt"
+      ]
+    },
+    "LegalPolicy": {
+      "title": "LegalPolicy",
+      "description": "Public legal and privacy policy page editable by the administrator.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "sortOrder": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "content",
+        "sortOrder",
+        "updatedAt"
+      ]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authorized administrator UID registry.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "email",
+        "grantedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/help_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/HelpRequest"
+      },
+      "description": "Private assistance requests submitted by visitors and reviewed exclusively by verified administrators."
+    },
+    "/request_status_lookups/{lookupId}": {
+      "schema": {
+        "$ref": "#/entities/RequestStatusLookup"
+      },
+      "description": "Non-PII request tracking records keyed by SHA-256 digest of referenceCode and verification PIN."
+    },
+    "/activities/{activityId}": {
+      "schema": {
+        "$ref": "#/entities/FoundationActivity"
+      },
+      "description": "Foundation activities and projects published or drafted by administrators."
+    },
+    "/impact_metrics/{metricsId}": {
+      "schema": {
+        "$ref": "#/entities/ImpactMetrics"
+      },
+      "description": "Verified impact counters published by administrators on the 'current' document."
+    },
+    "/contact_config/{configId}": {
+      "schema": {
+        "$ref": "#/entities/ContactConfig"
+      },
+      "description": "Official foundation helpline, WhatsApp, and email settings on the 'current' document."
+    },
+    "/site_content/{contentId}": {
+      "schema": {
+        "$ref": "#/entities/SiteContent"
+      },
+      "description": "Public foundation mission and page copy on the 'current' document."
+    },
+    "/legal_policies/{policyKey}": {
+      "schema": {
+        "$ref": "#/entities/LegalPolicy"
+      },
+      "description": "Legal, privacy, terms, disclaimer, data protection, and cookie policy pages."
+    },
+    "/admins/{adminUid}": {
+      "schema": {
+        "$ref": "#/entities/AdminRecord"
+      },
+      "description": "Authorized administrator records managed by the foundation owner."
+    }
+  }
+}
